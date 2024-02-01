@@ -14,12 +14,12 @@ This port isn't 100% complete and differs very slightly in API from the original
    * The `.flowLayout()` function doesn't work, and there may be others as well.
    * Setting `.constraints` on the layout doesn't work either
 
-<p align="center">
+<p>
   <a href="http://marvl.infotech.monash.edu/webcola/examples/smallworldwithgroups.html">
-    <img width="400" alt="Graph with simple groups" src="WebCola/examples/smallworldwithgroups.png" />
+    <img width="400" alt="Graph with simple groups" src="website/examples/smallworldwithgroups.png" />
   </a>
   <a href="http://marvl.infotech.monash.edu/webcola/examples/alignment.html">
-    <img width="400" alt="Graph with alignment constraints" src="WebCola/examples/alignment.png" />
+    <img width="400" alt="Graph with alignment constraints" src="website/examples/alignment.png" />
   </a>
 </p>
 
