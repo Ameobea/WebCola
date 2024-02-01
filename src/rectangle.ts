@@ -506,7 +506,7 @@ import {Point} from './geom'
                 .forEach(c => this.createAlignment(c));
         }
 
-        private setupVariablesAndBounds(x0: number[], y0: number[], desired: number[], getDesired: (v: GraphNode) => number) {
+        private setupVariablesAndBounds(x0: Float32Array, y0: Float32Array, desired: Float32Array, getDesired: (v: GraphNode) => number) {
             this.nodes.forEach((v, i) => {
                 if (v.fixed) {
                     v.variable.weight = v.fixedWeight ? v.fixedWeight : 1000;
@@ -520,7 +520,7 @@ import {Point} from './geom'
             });
         }
 
-        xProject(x0: number[], y0: number[], x: number[]) {
+        xProject(x0: Float32Array, y0: Float32Array, x: Float32Array) {
             if (!this.rootGroup && !(this.avoidOverlaps || this.xConstraints)) return;
             this.project(x0, y0, x0, x, v=> v.px, this.xConstraints, generateXGroupConstraints,
                 v => v.bounds.setXCentre(x[(<IndexedVariable>v.variable).index] = v.variable.position()),
@@ -533,7 +533,7 @@ import {Point} from './geom'
                 });
         }
 
-        yProject(x0: number[], y0: number[], y: number[]) {
+        yProject(x0: Float32Array, y0: Float32Array, y: Float32Array) {
             if (!this.rootGroup && !this.yConstraints) return;
             this.project(x0, y0, y0, y, v=> v.py, this.yConstraints, generateYGroupConstraints,
                 v => v.bounds.setYCentre(y[(<IndexedVariable>v.variable).index] = v.variable.position()),
@@ -546,14 +546,14 @@ import {Point} from './geom'
                 });
         }
 
-        projectFunctions(): { (x0: number[], y0: number[], r: number[]): void }[]{
+        projectFunctions(): { (x0: Float32Array, y0: Float32Array, r: Float32Array): void }[]{
             return [
                 (x0, y0, x) => this.xProject(x0, y0, x),
                 (x0, y0, y) => this.yProject(x0, y0, y)
             ];
         }
 
-        private project(x0: number[], y0: number[], start: number[], desired: number[],
+        private project(x0: Float32Array, y0: Float32Array, start: Float32Array, desired: Float32Array,
             getDesired: (v: GraphNode) => number,
             cs: Constraint[],
             generateConstraints: (g: ProjectionGroup) => Constraint[],
@@ -573,7 +573,7 @@ import {Point} from './geom'
             }
         }
 
-        private solve(vs: Variable[], cs: Constraint[], starting: number[], desired: number[]) {
+        private solve(vs: Variable[], cs: Constraint[], starting: Float32Array, desired: Float32Array) {
             var solver = new Solver(vs, cs);
             solver.setStartingPositions(starting);
             solver.setDesiredPositions(desired);

@@ -3,6 +3,10 @@ import {Descent} from './descent'
 import {Projection, GraphNode, Rectangle} from './rectangle'
 import {Variable} from './vpsc'
 import {jaccardLinkLengths, LinkLengthAccessor} from './linklengths'
+import { getDerivativeComputerWasm } from './wasmEngine'
+
+// Kick this off right away since we're going to need it eventually
+const wasmInstPromise = getDerivativeComputerWasm();
 
 export class Link3D {
         length: number;
@@ -57,7 +61,7 @@ export class Link3D {
         useJaccardLinkLengths: boolean = true;
 
         descent: Descent;
-        start(iterations: number = 100): Layout3D {
+        async start(iterations: number = 100): Promise<Layout3D> {
             const n = this.nodes.length;
 
             var linkAccessor = new LinkAccessor();
@@ -78,9 +82,10 @@ export class Link3D {
             var G = Descent.createSquareMatrix(n, function () { return 2 });
             this.links.forEach(({ source, target }) => G[source][target] = G[target][source] = 1);
 
-            this.descent = new Descent(this.result, D);
+            const wasmInst = await wasmInstPromise;
+            this.descent = new Descent(this.result, D, undefined, wasmInst);
             this.descent.threshold = 1e-3;
-            this.descent.G = G;
+            this.descent.G = G.map(Gn => new Float32Array(Gn));
             //let constraints = this.links.map(e=> <any>{
             //    axis: 'y', left: e.source, right: e.target, gap: e.length*1.5
             //});

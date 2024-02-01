@@ -1,0 +1,34 @@
+[package]
+name = "derivative_computer"
+version = "0.1.0"
+edition = "2018"
+
+# We optimize manually since we use SIMD and by default wasm-opt can't handle that without a flag
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
+
+[package.metadata.wasm-pack.profile.profiling]
+wasm-opt = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+rand = "0.7.3"
+rand_pcg = "0.2"
+console_error_panic_hook = "0.1.6"
+wasm-bindgen = { version = "=0.2.73", features = ["nightly"] }
+
+[profile.release]
+# debug-assertions = true
+panic = "abort"
+debug = 1
+codegen-units = 1
+lto = "fat"
+
+[profile.dev]
+debug-assertions = true
+
+[features]
+simd = []
+default = ["simd"]

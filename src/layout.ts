@@ -5,6 +5,11 @@ import {Rectangle, Projection, makeEdgeTo, makeEdgeBetween} from './rectangle'
 import {Calculator} from './shortestpaths'
 import {TangentVisibilityGraph, TVGPoint} from './geom'
 import {separateGraphs, applyPacking} from './handledisconnected'
+import { getDerivativeComputerWasm } from './wasmEngine'
+
+// Kick this off right away since we're going to need it eventually
+const wasmInstPromise = getDerivativeComputerWasm();
+
     /**
      * The layout process fires three events:
      *  - start: layout iterations started
@@ -492,17 +497,17 @@ import {separateGraphs, applyPacking} from './handledisconnected'
          * @param {number} [initialUserConstraintIterations=0] initial layout iterations with user-specified constraints
          * @param {number} [initialAllConstraintsIterations=0] initial layout iterations with all constraints including non-overlap
          * @param {number} [gridSnapIterations=0] iterations of "grid snap", which pulls nodes towards grid cell centers - grid of size node[0].width - only really makes sense if all nodes have the same width and height
-         * @param [keepRunning=true] keep iterating asynchronously via the tick method
+         * @param [keepRunning=true] keep iterating shronously via the tick method
          * @param [centerGraph=true] Center graph on restart
          */
-        start(
+        async start(
             initialUnconstrainedIterations: number = 0,
             initialUserConstraintIterations: number = 0,
             initialAllConstraintsIterations: number = 0,
             gridSnapIterations: number = 0,
             keepRunning = true,
             centerGraph = true,
-        ): this {
+        ): Promise<this> {
             var i: number,
                 j: number,
                 n = (<Array<any>>this.nodes()).length,
@@ -598,7 +603,8 @@ import {separateGraphs, applyPacking} from './handledisconnected'
             }
 
             this.avoidOverlaps(false);
-            this._descent = new Descent([x, y], D);
+            const wasmInst = await wasmInstPromise;
+            this._descent = new Descent([x, y], D, undefined, wasmInst);
 
             this._descent.locks.clear();
             for (var i = 0; i < n; ++i) {
@@ -634,18 +640,19 @@ import {separateGraphs, applyPacking} from './handledisconnected'
             this._descent.G = G;
             this._descent.run(initialAllConstraintsIterations);
 
-            if (gridSnapIterations) {
-                this._descent.snapStrength = 1000;
-                this._descent.snapGridSize = this._nodes[0].width;
-                this._descent.numGridSnapNodes = n;
-                this._descent.scaleSnapByMaxH = n != N; // if we have groups then need to scale hessian so grid forces still apply
-                var G0 = Descent.createSquareMatrix(N,(i, j) => {
-                    if (i >= n || j >= n) return G[i][j];
-                    return 0
-                });
-                this._descent.G = G0;
-                this._descent.run(gridSnapIterations);
-            }
+            // TODO
+            // if (gridSnapIterations) {
+            //     this._descent.snapStrength = 1000;
+            //     this._descent.snapGridSize = this._nodes[0].width;
+            //     this._descent.numGridSnapNodes = n;
+            //     this._descent.scaleSnapByMaxH = n != N; // if we have groups then need to scale hessian so grid forces still apply
+            //     var G0 = Descent.createSquareMatrix(N,(i, j) => {
+            //         if (i >= n || j >= n) return G[i][j];
+            //         return 0
+            //     });
+            //     this._descent.G = G0;
+            //     this._descent.run(gridSnapIterations);
+            // }
 
             this.updateNodePositions();
             this.separateOverlappingComponents(w, h, centerGraph);

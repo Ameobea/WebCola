@@ -375,13 +375,13 @@ DEBUG */
 
         // set starting positions without changing desired positions.
         // Note: it throws away any previous block structure.
-        setStartingPositions(ps: number[]): void {
+        setStartingPositions(ps: Float32Array): void {
             this.inactive = this.cs.map(c=> { c.active = false; return c; });
             this.bs = new Blocks(this.vs);
             this.bs.forEach((b, i) => b.posn = ps[i]);
         }
 
-        setDesiredPositions(ps: number[]): void {
+        setDesiredPositions(ps: Float32Array): void {
             this.vs.forEach((v, i) => v.desiredPosition = ps[i]);
         }
 

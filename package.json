@@ -1,22 +1,25 @@
 {
-  "name": "webcola",
+  "name": "webcola-wasm",
   "version": "3.4.0",
-  "description": "WebCola =======",
-  "author": "Tim Dwyer",
+  "description": "A fork of WebCola that provides extremely fast performance via WebAssembly",
+  "author": "WebCola: Tim Dwyer, webcola-wasm: Casey Primozic",
   "license": "MIT",
-  "homepage": "https://github.com/tgdwyer/WebCola",
+  "homepage": "https://github.com/ameobea/webcola-wasm",
   "bugs": {
-    "url": "https://github.com/tgdwyer/WebCola/issues"
+    "url": "https://github.com/ameobea/webcola-wasm/issues"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/tgdwyer/WebCola.git"
+    "url": "https://github.com/ameobea/webcola-wasm.git"
   },
   "keywords": [
     "Graph",
     "Layout",
     "Constraints",
-    "Optimization"
+    "Optimization",
+    "WebAssembly",
+    "Wasm",
+    "force-directed"
   ],
   "main": "dist/cola.umd.development.js",
   "module": "dist/cola.esm.js",
@@ -30,7 +33,7 @@
   "sideEffects": false,
   "scripts": {
     "watch": "tsdx watch --noClean --name cola --format esm,umd",
-    "build": "tsdx build --name cola --format esm,umd",
+    "build": "cd src/wasm && just build-all && cd - && tsdx build --name cola --format esm,umd",
     "postbuild": "npm run typings",
     "typings": "tsc -p tsconfig.dts.json && rollup -c rollup.dts.config.js",
     "test": "tsdx test --passWithNoTests",
@@ -42,12 +45,13 @@
     "release": "release-it --disable-metrics --npm.skipChecks",
     "release:pre": "release-it --disable-metrics --npm.skipChecks --preRelease=alpha --npm.tag=next",
     "compile-examples": "tsc -p tsconfig.example.json",
-    "website": "npm run docs && cp dist/cola.umd.production.min.js website/cola.min.js && npm run compile-examples",
+    "website": "npm run docs && cp dist/cola.umd.production.min.js website/cola.min.js && cp dist/cola.umd.production.min.js.map website/cola.umd.production.min.js.map && npm run compile-examples",
     "cy:run": "cypress run",
     "cy:open": "cypress open",
     "cy:junit": "cypress run --reporter junit --reporter-options 'mochaFile=junit-results/my-test-output.xml'"
   },
   "devDependencies": {
+    "@babel/plugin-syntax-import-meta": "^7.10.4",
     "@types/d3": "^4.5.0",
     "@types/graphlib-dot": "^0.6.1",
     "@types/jquery": "^3.3.38",
@@ -59,10 +63,11 @@
     "d3-zoom": "^1.1.4",
     "release-it": "^13.6.0",
     "rollup-plugin-dts": "^1.4.6",
+    "rollup-wasm-pack-import": "^2.0.0",
     "three": "^0.116.1",
     "tsdx": "^0.13.2",
     "typedoc": "^0.17.7",
-    "typescript": "^3.8.3"
+    "typescript": "^4"
   },
   "dependencies": {
     "@types/d3-dispatch": "^1",

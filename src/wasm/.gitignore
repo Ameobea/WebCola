@@ -1,0 +1,7 @@
+target
+*.wasm
+wasm*
+!build/.gitkeep
+!build/simd/.gitkeep
+!build/no_simd/.gitkeep
+./build/*

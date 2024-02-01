@@ -95,7 +95,7 @@ module cola3 {
     }
 }
 
-d3.json("graphdata/miserables.json", function (error, graph) {
+d3.json("graphdata/miserables.json", async function (error, graph) {
     var scene = new THREE.Scene();
     var camera = new THREE.PerspectiveCamera(80, window.innerWidth / window.innerHeight, 0.1, 1000);
     var renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -125,7 +125,7 @@ d3.json("graphdata/miserables.json", function (error, graph) {
     var colaGraph = new cola3.Graph(colaObject, n, links, nodeColourings);
 
     let layout = new cola.Layout3D(nodes, links, 6);
-    layout.start(10);
+    await layout.start(10);
 
     camera.position.z = 50;
 

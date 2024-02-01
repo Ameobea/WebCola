@@ -1,8 +1,18 @@
-WebCola [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+webcola-wasm [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 =======
 
-JavaScript constraint based layout for high-quality graph visualization and exploration 
-using D3.js and other web-based graphics libraries.
+This is a fork of **WebCola**, a JavaScript constraint based layout for high-quality graph visualization and exploration using D3.js and other web-based graphics libraries.
+
+It uses Rust compiled to WebAssembly to speed up the performance of the library leading to up to 4x performance gains compared to just JavaScript code.
+
+## Important Note
+
+This port isn't 100% complete and differs very slightly in API from the original.  Notably:
+
+ * The `start()` function now returns a `Promise` and must be awaited before interacting more with the WebCola instance.  This is due to the need to asynchronously compile WebAssembly under the hood.
+ * Some features involving constraints are not yet ported to Wasm.
+   * The `.flowLayout()` function doesn't work, and there may be others as well.
+   * Setting `.constraints` on the layout doesn't work either
 
 <p align="center">
   <a href="http://marvl.infotech.monash.edu/webcola/examples/smallworldwithgroups.html">
@@ -23,15 +33,13 @@ Installation
 #### Browser:
 ```html
 <!-- Minified version -->
-<script src="http://marvl.infotech.monash.edu/webcola/cola.min.js"></script>
+<script src="https://webcola-wasm.ameo.design/cola.umd.production.min.js"></script>
 <!-- Full version -->
-<script src="http://marvl.infotech.monash.edu/webcola/cola.js"></script>
+<script src="https://webcola-wasm.ameo.design/cola.umd.development.js"></script>
 ```
 
-The minified version can also be accessed from [jsDelivr](https://cdn.jsdelivr.net/gh/tgdwyer/WebCola/WebCola/cola.min.js).
-
 #### Npm:
-	
+
 	npm install webcola --save
 
 You can also install it through npm by first adding it to `package.json`:
@@ -53,17 +61,21 @@ Building
 *Linux/Mac/Windows Command Line:*
 
  - install [node.js](http://nodejs.org)
+ - install [wasm-bindgen](https://github.com/rustwasm/wasm-bindgen) and [Rust](https://rustup.rs/)
+ - install the [Just](https://github.com/casey/just) command runner: `cargo install just`
+ - Add WebAssembly support for Rust:
+
+        rustup target add wasm32-unknown-unknown
 
  - from the WebCola directory:
 
         npm install
 
- - build, minify and test:
+ - build + minify:
 
         npm run build
-        npm run test
 
-This creates the `cola.js` and `cola.min.js` files in the `dist` directory and runs tests.
+This creates the `cola.js` and `cola.min.js` files in the `WebCola` directory and generates `index.js` for npm
 
 *Visual Studio:*
 

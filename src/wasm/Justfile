@@ -1,0 +1,35 @@
+# This is a hack because Rollup's wasm support is worse than abyssmal
+patch-js:
+  echo 'let wasm; export async function setWasm(wasmModule) { const inst = await WebAssembly.instantiate(wasmModule, { "./derivative_computer_bg.js": { __wbindgen_memory } }); wasm = inst.exports; }' > ./build/scratch
+  tail -n +2 ./build/no_simd/derivative_computer_bg.js >> ./build/scratch
+  mv ./build/scratch ./build/no_simd/derivative_computer_bg.js
+
+  echo 'let wasm; export async function setWasm(wasmModule) { const inst = await WebAssembly.instantiate(wasmModule, { "./derivative_computer_bg.js": { __wbindgen_memory } }); wasm = inst.exports; }' >> ./build/scratch
+  tail -n +2 ./build/simd/derivative_computer_bg.js >> ./build/scratch
+  mv ./build/scratch ./build/simd/derivative_computer_bg.js
+
+build-all:
+  # non-simd version
+  cargo build --release --target wasm32-unknown-unknown --no-default-features
+  wasm-bindgen ./target/wasm32-unknown-unknown/release/derivative_computer.wasm --browser --remove-producers-section --out-dir ./build/no_simd
+  wasm-opt ./build/no_simd/derivative_computer_bg.wasm -g -O4 --enable-nontrapping-float-to-int --precompute-propagate --fast-math --detect-features --strip-dwarf -c -o ./build/no_simd/derivative_computer_bg.wasm
+
+  # SIMD version
+  RUSTFLAGS="-Ctarget-feature=+simd128" cargo build --release --target wasm32-unknown-unknown
+  wasm-bindgen ./target/wasm32-unknown-unknown/release/derivative_computer.wasm --browser --remove-producers-section --out-dir ./build/simd
+  wasm-opt ./build/simd/derivative_computer_bg.wasm -g -O4 --enable-simd --enable-nontrapping-float-to-int --precompute-propagate --fast-math --detect-features --strip-dwarf -c -o ./build/simd/derivative_computer_bg.wasm
+
+  just patch-js
+
+build:
+  RUSTFLAGS="-Ctarget-feature=+simd128" cargo build --release --target wasm32-unknown-unknown
+  wasm-bindgen ./target/wasm32-unknown-unknown/release/derivative_computer.wasm --browser --remove-producers-section --out-dir ./build/simd
+  wasm-opt ./build/simd/derivative_computer_bg.wasm -g -O4 --enable-simd --enable-nontrapping-float-to-int --precompute-propagate --fast-math --detect-features --strip-dwarf -c -o ./build/simd/derivative_computer_bg.wasm
+
+  just patch-js
+
+debug:
+  cargo build
+  wasm-bindgen ./target/wasm32-unknown-unknown/debug/derivative_computer.wasm --browser --remove-producers-section --out-dir ./build/simd
+
+  just patch-js

@@ -2,6 +2,7 @@
   "extends": "./tsconfig.json",
   "include": ["website/examples/*.ts"],
   "compilerOptions": {
+    "target": "es6",
     "module": "none",
     "noEmit": false,
     "resolveJsonModule": false,

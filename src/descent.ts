@@ -1,3 +1,5 @@
+import type { DerivativeComputerWasmInst } from "wasmEngine";
+
     /**
      * Descent respects a collection of locks over nodes that should not move
      * @class Locks
@@ -41,6 +43,8 @@ DEBUG */
         }
     }
 
+    const BYTES_PER_F32 = 32 / 8;
+
     /**
      * Uses a gradient descent approach to reduce a stress or p-stress goal function over a graph with specified ideal edge lengths or a square matrix of dissimilarities.
      * The standard stress function over a graph nodes with position vectors x,y,z is (mathematica input):
@@ -52,19 +56,46 @@ DEBUG */
      * @class Descent
      */
     export class Descent {
+        private wasm: DerivativeComputerWasmInst;
+        private ctxPtr: number;
+
         public threshold: number = 0.0001;
-        /** Hessian Matrix
-         * @property H {number[][][]}
-         */
-        public H: number[][][];
         /** gradient vector
-         * @property G {number[][]}
+         * @property g {Float32Array[]}
          */
-        public g: number[][];
-        /** positions vector
+        public get g(): Float32Array[] {
+            const memory: WebAssembly.Memory = this.wasm.get_memory();
+            const memoryView = new Float32Array(memory.buffer);
+
+            const gPtr = this.k === 2 ? this.wasm.get_g_2d(this.ctxPtr) : this.wasm.get_g_3d(this.ctxPtr);
+            const gOffset = gPtr / BYTES_PER_F32;
+            return new Array(this.k)
+                .fill(null)
+                .map((_, i) => memoryView.subarray(gOffset + i * this.n, gOffset + i * this.n + this.n));
+        }
+        public set G(newG: Float32Array[] | null)  {
+            const allG = (() => {
+                if (newG) {
+                    const allG = new Float32Array(this.n * this.n);
+                    newG.forEach((Gn, i) => allG.set(Gn, i * this.n));
+                    return allG;
+                } else {
+                    return new Float32Array();
+                }
+            })();
+
+            if (this.k === 2) {
+                this.wasm.set_G_2d(this.ctxPtr, allG);
+            } else if (this.k === 3) {
+                this.wasm.set_G_3d(this.ctxPtr, allG);
+            } else {
+                throw new Error('Invalid dimensionality');
+            }
+        }
+       /** positions vector
          * @property x {number[][]}
          */
-        public x: number[][];
+        public x: Float32Array[];
         /**
          * @property k {number} dimensionality
          */
@@ -74,6 +105,65 @@ DEBUG */
          * @property n {number}
          */
         public n: number;
+        /**
+         * matrix of desired distances between pairs of nodes
+         */
+         public get D(): Float32Array[] {
+            const memory: WebAssembly.Memory = this.wasm.get_memory();
+            const memoryView = new Float32Array(memory.buffer);
+
+            const DPtr = this.k === 2 ? this.wasm.get_D_2d(this.ctxPtr) : this.wasm.get_D_3d(this.ctxPtr);
+            const DOffset = DPtr / BYTES_PER_F32;
+            return new Array(this.n)
+                .fill(null)
+                .map((_, i) => memoryView.subarray(DOffset + i * this.n, DOffset + i * this.n + this.n));
+        }
+
+        public computeDerivatives(x: Float32Array[]) {
+            if (this.k === 2) {
+                const packedX = (() => {
+                    const packed = new Float32Array(x[0].length * this.k);
+                    x.forEach((xn, i) => packed.set(xn, i * this.n));
+                    return packed;
+                })();
+                const outX = this.wasm.compute_2d(this.ctxPtr, packedX);
+
+                if (x) {
+                    x.forEach((xn, i) => {
+                        const slice = outX.subarray(i * this.n, i * this.n + this.n);
+                        xn.set(slice);
+                    })
+                }
+            } else if (this.k === 3) {
+                const packedX = (() => {
+                    const packed = new Float32Array(x[0].length * this.k);
+                    x.forEach((xn, i) => packed.set(xn, i * this.n));
+                    return packed;
+                })();
+                const outX = this.wasm.compute_3d(this.ctxPtr, packedX);
+
+                if (x) {
+                    x.forEach((xn, i) => {
+                        const slice = outX.subarray(i * this.n, i * this.n + this.n);
+                        xn.set(slice);
+                    })
+                }
+            } else {
+                throw new Error('Invalid dimensionality');
+            }
+
+            if (!this.locks.isEmpty()) {
+                this.locks.apply((u, p) => {
+                    if (this.k === 2) {
+                        this.wasm.apply_lock_2d(this.ctxPtr, u, p[0], p[1], x[0][u], x[1][u]);
+                    } else if (this.k === 3) {
+                        this.wasm.apply_lock_3d(this.ctxPtr, u, p[0], p[1], p[2], x[0][u], x[1][u], x[2][u]);
+                    } else {
+                        throw new Error('Invalid dimensionality');
+                    }
+                });
+            }
+        }
 
         public locks: Locks;
 
@@ -81,14 +171,13 @@ DEBUG */
         private minD: number;
 
         // pool of arrays of size n used internally, allocated in constructor
-        private Hd: number[][];
-        private a: number[][];
-        private b: number[][];
-        private c: number[][];
-        private d: number[][];
-        private e: number[][];
-        private ia: number[][];
-        private ib: number[][];
+        private a: Float32Array[];
+        private b: Float32Array[];
+        private c: Float32Array[];
+        private d: Float32Array[];
+        private e: Float32Array[];
+        private ia: Float32Array[];
+        private ib: Float32Array[];
         private xtmp: number[][];
 
 
@@ -102,7 +191,30 @@ DEBUG */
 
         private random = new PseudoRandom();
 
-        public project: { (x0: number[], y0: number[], r: number[]): void }[] = null;
+        public project: { (x0: Float32Array, y0: Float32Array, r: Float32Array): void }[] = null;
+
+        private setupWasm(D: number[][], G: number[][] | null = null) {
+            const allD = new Float32Array(this.n * this.n);
+            const allG = G ? new Float32Array(this.n * this.k) : new Float32Array(0);
+            D.forEach((dn, i) => {
+                allD.set(dn, i * this.n);
+            });
+            if (G) {
+                G.forEach((gn, i) => {
+                    allG.set(gn, i * this.n);
+                });
+            }
+
+            allD.forEach((d, i) => {
+                if (d === Infinity) {
+                    allD[i] = -10000000; // ideal distance
+                    allG[i] = 1000.; // weight
+                }
+            });
+
+            const createrFn = this.k === 2 ? this.wasm.create_derivative_computer_ctx_2d : this.wasm.create_derivative_computer_ctx_3d;
+            this.ctxPtr = createrFn(this.n, allD, allG);
+        }
 
         /**
          * @method constructor
@@ -112,13 +224,15 @@ DEBUG */
          * If G[i][j] > 1 and the separation between nodes i and j is greater than their ideal distance, then there is no contribution for this pair to the goal
          * If G[i][j] <= 1 then it is used as a weighting on the contribution of the variance between ideal and actual separation between i and j to the goal function
          */
-        constructor(x: number[][], public D: number[][], public G: number[][]= null) {
-            this.x = x;
+        constructor(x: number[][], D: number[][], G: number[][] = null, wasm: DerivativeComputerWasmInst) {
+            this.wasm = wasm;
+            this.x = x.map(xn => new Float32Array(xn));
             this.k = x.length; // dimensionality
             var n = this.n = x[0].length; // number of nodes
-            this.H = new Array(this.k);
-            this.g = new Array(this.k);
-            this.Hd = new Array(this.k);
+
+            // Set up Wasm context
+            this.setupWasm(D, G);
+
             this.a = new Array(this.k);
             this.b = new Array(this.k);
             this.c = new Array(this.k);
@@ -142,20 +256,14 @@ DEBUG */
             if (this.minD === Number.MAX_VALUE) this.minD = 1;
             i = this.k;
             while (i--) {
-                this.g[i] = new Array(n);
-                this.H[i] = new Array(n);
                 j = n;
-                while (j--) {
-                    this.H[i][j] = new Array(n);
-                }
-                this.Hd[i] = new Array(n);
-                this.a[i] = new Array(n);
-                this.b[i] = new Array(n);
-                this.c[i] = new Array(n);
-                this.d[i] = new Array(n);
-                this.e[i] = new Array(n);
-                this.ia[i] = new Array(n);
-                this.ib[i] = new Array(n);
+                this.a[i] = new Float32Array(n);
+                this.b[i] = new Float32Array(n);
+                this.c[i] = new Float32Array(n);
+                this.d[i] = new Float32Array(n);
+                this.e[i] = new Float32Array(n);
+                this.ia[i] = new Float32Array(n);
+                this.ib[i] = new Float32Array(n);
                 this.xtmp[i] = new Array(n);
             }
         }
@@ -182,128 +290,14 @@ DEBUG */
             return u.map(x=> x *= this.minD / l);
         }
 
-        // compute first and second derivative information storing results in this.g and this.H
-        public computeDerivatives(x: number[][]) {
-            const n = this.n;
-            if (n < 1) return;
-            let i: number;
-/* DEBUG
-            for (var u: number = 0; u < n; ++u)
-                for (i = 0; i < this.k; ++i)
-                    if (isNaN(x[i][u])) debugger;
-DEBUG */
-
-            let d = new Array<number>(this.k); // distance vector
-            let d2 = new Array<number>(this.k); // distance vector squared
-            let Huu = new Array<number>(this.k); // Hessian diagonal
-            let maxH = 0; // max Hessian matrix entry
-
-            // across all nodes u
-            for (let u = 0; u < n; ++u) {
-                // zero gradient and hessian diagonals
-                for (i = 0; i < this.k; ++i) Huu[i] = this.g[i][u] = 0;
-
-                // across all nodes v
-                for (let v = 0; v < n; ++v) {
-                    if (u === v) continue;
-
-                    // The following loop computes distance vector and
-                    // randomly displaces nodes that are at identical positions
-                    let maxDisplaces = n; // avoid infinite loop in the case of numerical issues, such as huge values
-                    let distanceSquared = 0;
-                    while (maxDisplaces--) {
-                        distanceSquared = 0;
-                        for (i = 0; i < this.k; ++i) {
-                            const dx = d[i] = x[i][u] - x[i][v];
-                            distanceSquared += d2[i] = dx * dx;
-                        }
-                        if (distanceSquared > 1e-9) break;
-                        const rd = this.offsetDir();
-                        for (i = 0; i < this.k; ++i) x[i][v] += rd[i];
-                    }
-                    const distance = Math.sqrt(distanceSquared);
-                    const idealDistance = this.D[u][v];
-                    // weights are passed via G matrix.
-                    // weight > 1 means not immediately connected
-                    // small weights (<<1) are used for group dummy nodes
-                    let weight = this.G != null ? this.G[u][v] : 1;
-
-                    // ignore long range attractions for nodes not immediately connected (P-stress)
-                    if (weight > 1 && distance > idealDistance || !isFinite(idealDistance)) {
-                        for (i = 0; i < this.k; ++i) this.H[i][u][v] = 0;
-                        continue;
-                    }
-                    // weight > 1 was just an indicator - this is an arcane interface,
-                    // but we are trying to be economical storing and passing node pair info
-                    if (weight > 1) {
-                        weight = 1;
-                    }
-                    const idealDistSquared = idealDistance * idealDistance,
-                        gs = 2 * weight * (distance - idealDistance) / (idealDistSquared * distance),
-                        distanceCubed = distanceSquared * distance,
-                        hs = 2 * -weight / (idealDistSquared * distanceCubed);
-                    if (!isFinite(gs))
-                        console.log(gs);
-                    for (i = 0; i < this.k; ++i) {
-                        this.g[i][u] += d[i] * gs;
-                        Huu[i] -= this.H[i][u][v] = hs * (2 * distanceCubed + idealDistance * (d2[i] - distanceSquared));
-                    }
-                }
-                for (i = 0; i < this.k; ++i) maxH = Math.max(maxH, this.H[i][u][u] = Huu[i]);
-            }
-            // Grid snap forces
-            var r = this.snapGridSize/2;
-            var g = this.snapGridSize;
-            var w = this.snapStrength;
-            var k = w / (r * r);
-            var numNodes = this.numGridSnapNodes;
-            //var numNodes = n;
-            for (var u: number = 0; u < numNodes; ++u) {
-                for (i = 0; i < this.k; ++i) {
-                    var xiu = this.x[i][u];
-                    var m = xiu / g;
-                    var f = m % 1;
-                    var q = m - f;
-                    var a = Math.abs(f);
-                    var dx = (a <= 0.5) ? xiu - q * g :
-                        (xiu > 0) ? xiu - (q + 1) * g : xiu - (q - 1) * g;
-                    if (-r < dx && dx <= r) {
-                        if (this.scaleSnapByMaxH) {
-                            this.g[i][u] += maxH * k * dx;
-                            this.H[i][u][u] += maxH * k;
-                        } else {
-                            this.g[i][u] += k * dx;
-                            this.H[i][u][u] += k;
-                        }
-                    }
-                }
-            }
-            if (!this.locks.isEmpty()) {
-                this.locks.apply((u, p) => {
-                    for (i = 0; i < this.k; ++i) {
-                        this.H[i][u][u] += maxH;
-                        this.g[i][u] -= maxH * (p[i] - x[i][u]);
-                    }
-                });
-            }
-/* DEBUG
-            for (var u: number = 0; u < n; ++u)
-                for (i = 0; i < this.k; ++i) {
-                    if (isNaN(this.g[i][u])) debugger;
-                    for (var v: number = 0; v < n; ++v)
-                        if (isNaN(this.H[i][u][v])) debugger;
-                }
-DEBUG */
-        }
-
-        private static dotProd(a: number[], b: number[]): number {
+        private static dotProd(a: Float32Array, b: Float32Array): number {
             var x = 0, i = a.length;
             while (i--) x += a[i] * b[i];
             return x;
         }
 
         // result r = matrix m * vector v
-        private static rightMultiply(m: number[][], v: number[], r: number[]) {
+        private static rightMultiply(m: Float32Array[], v: Float32Array, r: Float32Array) {
             var i = m.length;
             while (i--) r[i] = Descent.dotProd(m[i], v);
         }
@@ -311,27 +305,27 @@ DEBUG */
         // computes the optimal step size to take in direction d using the
         // derivative information in this.g and this.H
         // returns the scalar multiplier to apply to d to get the optimal step
-        public computeStepSize(d: number[][]): number {
-            var numerator = 0, denominator = 0;
-            for (var i = 0; i < this.k; ++i) {
-                numerator += Descent.dotProd(this.g[i], d[i]);
-                Descent.rightMultiply(this.H[i], d[i], this.Hd[i]);
-                denominator += Descent.dotProd(d[i], this.Hd[i]);
+        public computeStepSize(): number {
+            if (this.k === 2) {
+                return this.wasm.compute_step_size_2d(this.ctxPtr);
+            } else if (this.k === 3) {
+                return this.wasm.compute_step_size_3d(this.ctxPtr);
+            } else {
+                throw new Error('Invalid dimensionality');
             }
-            if (denominator === 0 || !isFinite(denominator)) return 0;
-            return 1 * numerator / denominator;
         }
 
         public reduceStress(): number {
             this.computeDerivatives(this.x);
-            var alpha = this.computeStepSize(this.g);
+            var alpha = this.computeStepSize();
+            const thisG = this.g;
             for (var i = 0; i < this.k; ++i) {
-                this.takeDescentStep(this.x[i], this.g[i], alpha);
+                this.takeDescentStep(this.x[i], thisG[i], alpha);
             }
             return this.computeStress();
         }
 
-        private static copy(a: number[][], b: number[][]): void {
+        private static copy(a: Float32Array[], b: Float32Array[]): void {
             var m = a.length, n = b[0].length;
             for (var i = 0; i < m; ++i) {
                 for (var j = 0; j < n; ++j) {
@@ -346,7 +340,7 @@ DEBUG */
         // r: result positions will be returned here
         // d: unconstrained descent vector
         // stepSize: amount to step along d
-        private stepAndProject(x0: number[][], r: number[][], d: number[][], stepSize: number): void {
+        private stepAndProject(x0: Float32Array[], r: Float32Array[], d: Float32Array[], stepSize: number): void {
             Descent.copy(x0, r);
             this.takeDescentStep(r[0], d[0], stepSize);
             if (this.project) this.project[0](x0[0], x0[1], r[0]);
@@ -376,9 +370,9 @@ DEBUG */
             Descent.mApply(this.k, this.n, f);
         }
 
-        private computeNextPosition(x0: number[][], r: number[][]): void {
+        private computeNextPosition(x0: Float32Array[], r: Float32Array[]): void {
             this.computeDerivatives(x0);
-            var alpha = this.computeStepSize(this.g);
+            const alpha = this.computeStepSize();
             this.stepAndProject(x0, r, this.g, alpha);
 /* DEBUG
             for (var u: number = 0; u < this.n; ++u)
@@ -386,10 +380,12 @@ DEBUG */
                     if (isNaN(r[i][u])) debugger;
 DEBUG */
             if (this.project) {
-                this.matrixApply((i, j) => this.e[i][j] = x0[i][j] - r[i][j]);
-                var beta = this.computeStepSize(this.e);
-                beta = Math.max(0.2, Math.min(beta, 1));
-                this.stepAndProject(x0, r, this.e, beta);
+                // This functionality is not yet implemented with the Wasm port
+                throw new Error('Computing step with with `this.project` set is not yet implemented in Wasm port');
+                // this.matrixApply((i, j) => this.e[i][j] = x0[i][j] - r[i][j]);
+                // var beta = this.computeStepSize(this.e);
+                // beta = Math.max(0.2, Math.min(beta, 1));
+                // this.stepAndProject(x0, r, this.e, beta);
             }
         }
 
@@ -420,12 +416,12 @@ DEBUG */
             return disp;
         }
 
-        private static mid(a: number[][], b: number[][], m: number[][]): void {
+        private static mid(a: Float32Array[], b: Float32Array[], m: Float32Array[]): void {
             Descent.mApply(a.length, a[0].length, (i, j) =>
                 m[i][j] = a[i][j] + (b[i][j] - a[i][j]) / 2.0);
         }
 
-        public takeDescentStep(x: number[], d: number[], stepSize: number): void {
+        public takeDescentStep(x: Float32Array, d: Float32Array, stepSize: number): void {
             for (var i = 0; i < this.n; ++i) {
                 x[i] = x[i] - stepSize * d[i];
             }
