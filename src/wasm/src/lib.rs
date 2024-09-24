@@ -1,4 +1,4 @@
-#![feature(box_syntax, core_intrinsics, wasm_simd)]
+#![feature(core_intrinsics, wasm_simd)]
 #![allow(non_snake_case)]
 
 use rand::prelude::*;
@@ -698,7 +698,7 @@ pub fn create_derivative_computer_ctx_2d(
         },
         node_count,
     );
-    Box::into_raw(box ctx)
+    Box::into_raw(Box::new(ctx))
 }
 
 #[wasm_bindgen]
@@ -725,7 +725,7 @@ pub fn create_derivative_computer_ctx_3d(
         },
         node_count,
     );
-    Box::into_raw(box ctx)
+    Box::into_raw(Box::new(ctx))
 }
 
 #[wasm_bindgen]

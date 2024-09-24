@@ -1,5 +1,5 @@
 {
-  "name": "webcola-wasm",
+  "name": "webcola",
   "version": "3.4.0",
   "description": "A fork of WebCola that provides extremely fast performance via WebAssembly",
   "author": "WebCola: Tim Dwyer, webcola-wasm: Casey Primozic",
